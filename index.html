@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Needle in a Haystack</title>
+<style>
+    :root {
+        --purple: #6817c9;
+        --purple-deep: #4d0d96;
+        --purple-soft: rgba(255,255,255,.08);
+        --ink: #080808;
+        --hay: #f0ad18;
+        --hay-dark: #d99209;
+        --needle: #d7d9dc;
+        --needle-edge: #9fa4ab;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--purple);
+        color: var(--ink);
+        font-family: Arial, Helvetica, sans-serif;
+    }
+
+    body {
+        position: fixed;
+        inset: 0;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+    }
+
+    /* The entire viewport is the board. There is deliberately no game box. */
+    #game {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        z-index: 1;
+        touch-action: none;
+    }
+
+    /* ----------------------------- UI ----------------------------- */
+
+    .ui {
+        position: fixed;
+        z-index: 5000;
+        pointer-events: none;
+    }
+
+    .top-left {
+        top: max(18px, env(safe-area-inset-top));
+        left: max(20px, env(safe-area-inset-left));
+        width: min(360px, 42vw);
+    }
+
+    .brand {
+        display: inline-block;
+        padding: 12px 17px 13px;
+        border: 1px solid rgba(0,0,0,.26);
+        background: rgba(255,255,255,.08);
+        box-shadow: 0 7px 22px rgba(30,0,60,.10);
+        backdrop-filter: blur(3px);
+    }
+
+    .brand h1 {
+        margin: 0;
+        font-size: clamp(22px, 2.7vw, 34px);
+        line-height: 1;
+        letter-spacing: -.6px;
+        font-weight: 600;
+    }
+
+    .brand .byline {
+        margin-top: 7px;
+        font-size: 12px;
+        letter-spacing: 1.8px;
+        text-transform: uppercase;
+        opacity: .72;
+    }
+
+    .instructions {
+        margin-top: 14px;
+        width: min(300px, 38vw);
+        font-size: 13px;
+        line-height: 1.45;
+        opacity: .9;
+    }
+
+    .top-right {
+        top: max(18px, env(safe-area-inset-top));
+        right: max(20px, env(safe-area-inset-right));
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        pointer-events: auto;
+    }
+
+    .hud-card {
+        min-width: 112px;
+        padding: 10px 14px;
+        border: 1px solid rgba(0,0,0,.24);
+        background: rgba(255,255,255,.09);
+        box-shadow: 0 7px 22px rgba(30,0,60,.10);
+        backdrop-filter: blur(3px);
+    }
+
+    .hud-label {
+        display: block;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        opacity: .65;
+        margin-bottom: 3px;
+    }
+
+    #timer {
+        display: block;
+        font-variant-numeric: tabular-nums;
+        font-size: 21px;
+        font-weight: 600;
+    }
+
+    button {
+        appearance: none;
+        border: 1px solid rgba(0,0,0,.34);
+        background: rgba(255,255,255,.13);
+        color: var(--ink);
+        padding: 10px 14px;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        transition: transform .12s ease, background .12s ease;
+    }
+
+    button:hover {
+        background: rgba(255,255,255,.22);
+        transform: translateY(-1px);
+    }
+
+    button:active {
+        transform: translateY(0);
+    }
+
+    .legend {
+        left: 20px;
+        bottom: max(18px, env(safe-area-inset-bottom));
+        padding: 9px 12px;
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        font-size: 11px;
+        background: rgba(255,255,255,.08);
+        border: 1px solid rgba(0,0,0,.18);
+        pointer-events: none;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+    }
+
+    .legend-hay {
+        width: 42px;
+        height: 5px;
+        background: var(--hay);
+    }
+
+    .legend-needle {
+        position: relative;
+        width: 42px;
+        height: 5px;
+        background: var(--needle);
+    }
+
+    .legend-needle::before {
+        content: "";
+        position: absolute;
+        left: 3px;
+        top: -1px;
+        width: 9px;
+        height: 7px;
+        border-radius: 50%;
+        background: #111;
+    }
+
+    .center-note {
+        left: 50%;
+        bottom: max(20px, env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        font-size: 11px;
+        letter-spacing: .8px;
+        opacity: .55;
+        text-transform: uppercase;
+    }
+
+    /* -------------------------- Game assets ------------------------- */
+
+    .straw {
+        position: absolute;
+        display: block;
+        overflow: visible;
+        transform-origin: 50% 50%;
+        cursor: grab;
+        touch-action: none;
+        will-change: left, top, transform;
+    }
+
+    .straw.dragging {
+        cursor: grabbing;
+    }
+
+.straw path {
+    fill: none;
+    stroke: #111;
+    stroke-width: 7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.straw path:not(.secondary) {
+    stroke: var(--hay);
+    stroke-width: 5;
+}
+    #needle {
+        position: absolute;
+        overflow: visible;
+        transform-origin: 50% 50%;
+        cursor: pointer;
+        z-index: 20;
+        touch-action: none;
+    }
+
+    #needle .body {
+        fill: var(--needle);
+        stroke: var(--needle-edge);
+        stroke-width: .8;
+    }
+
+    #needle .eye {
+        fill: #111;
+    }
+
+    #needle .shine {
+        fill: rgba(255,255,255,.45);
+    }
+
+    #needle.found {
+        animation: found .45s ease-out;
+    }
+
+    @keyframes found {
+        45% { transform: scale(1.24) rotate(5deg); }
+        100% { transform: scale(1) rotate(0); }
+    }
+
+    /* -------------------------- Result UI --------------------------- */
+
+    .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(44, 3, 83, .78);
+        backdrop-filter: blur(5px);
+        pointer-events: auto;
+    }
+
+    .overlay.show {
+        display: flex;
+    }
+
+    .result-card {
+        width: min(430px, 92vw);
+        padding: 28px;
+        background: #7420d2;
+        border: 1px solid rgba(0,0,0,.35);
+        box-shadow: 0 22px 70px rgba(20,0,40,.35);
+    }
+
+    .result-kicker {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        opacity: .65;
+    }
+
+    .result-card h2 {
+        margin: 6px 0 4px;
+        font-size: 30px;
+        font-weight: 600;
+    }
+
+    .result-time {
+        font-size: 18px;
+        margin-bottom: 22px;
+    }
+
+    .name-input {
+        width: 100%;
+        border: 1px solid rgba(0,0,0,.42);
+        background: rgba(255,255,255,.92);
+        color: #111;
+        padding: 12px;
+        font: inherit;
+        font-size: 15px;
+        outline: none;
+        margin-bottom: 10px;
+        user-select: text;
+        -webkit-user-select: text;
+    }
+
+    .save-score {
+        width: 100%;
+        background: rgba(255,255,255,.16);
+    }
+
+    .leaderboard {
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(0,0,0,.18);
+    }
+
+    .leaderboard-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 8px;
+    }
+
+    .leaderboard h3 {
+        margin: 0;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 1.4px;
+    }
+
+    .score {
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 8px;
+        padding: 5px 0;
+        font-size: 13px;
+        border-bottom: 1px solid rgba(0,0,0,.09);
+    }
+
+    .score:last-child {
+        border-bottom: 0;
+    }
+
+    .score-time {
+        font-variant-numeric: tabular-nums;
+    }
+
+    .empty {
+        font-size: 12px;
+        opacity: .65;
+    }
+
+    .again {
+        width: 100%;
+        margin-top: 14px;
+    }
+
+    .small-note {
+        margin-top: 9px;
+        font-size: 10px;
+        opacity: .55;
+        text-align: center;
+    }
+
+    @media (max-width: 850px) {
+        .top-left {
+            width: auto;
+            max-width: 62vw;
+        }
+
+        .brand {
+            padding: 9px 12px;
+        }
+
+        .brand h1 {
+            font-size: 21px;
+        }
+
+        .brand .byline {
+            margin-top: 5px;
+            font-size: 9px;
+            letter-spacing: 1.2px;
+        }
+
+        .instructions {
+            display: none;
+        }
+
+        .top-right {
+            right: 12px;
+            top: 12px;
+            gap: 6px;
+        }
+
+        .hud-card {
+            min-width: 91px;
+            padding: 8px 10px;
+        }
+
+        #timer {
+            font-size: 17px;
+        }
+
+        .top-right button {
+            padding: 9px 10px;
+        }
+
+        .legend {
+            left: 12px;
+            bottom: 12px;
+        }
+
+        .center-note {
+            display: none;
+        }
+    }
+</style>
+</head>
+
+<body>
+
+<div id="game" aria-label="Needle in a Haystack game"></div>
+
+<!-- UI floats over the same full-screen play area. Hay can pass underneath it. -->
+<div class="ui top-left">
+    <div class="brand">
+        <h1>Needle in a Haystack</h1>
+        <div class="byline">A tiny game of unreasonable patience · By Gaurav</div>
+    </div>
+    <div class="instructions">
+        Move the hay. The needle is somewhere underneath.
+        <strong>Click the needle when you find it.</strong>
+    </div>
+</div>
+
+<div class="ui top-right">
+    <div class="hud-card">
+        <span class="hud-label">Time</span>
+        <span id="timer">0.00 s</span>
+    </div>
+    <button id="restart">Restart</button>
+</div>
+
+<div class="ui legend">
+    <div class="legend-item"><span class="legend-hay"></span><span>Hay</span></div>
+    <div class="legend-item"><span class="legend-needle"></span><span>Needle</span></div>
+</div>
+
+<div class="ui center-note">drag · move · uncover</div>
+
+<div class="overlay" id="overlay">
+    <div class="result-card">
+        <div class="result-kicker">You actually found it</div>
+        <h2>Needle Found</h2>
+        <div class="result-time" id="result"></div>
+
+        <input
+            class="name-input"
+            id="nameInput"
+            maxlength="18"
+            autocomplete="off"
+            placeholder="Enter your name"
+        >
+
+        <button class="save-score" id="saveScore">Save Score</button>
+
+        <div class="leaderboard">
+            <div class="leaderboard-head">
+                <h3>Leaderboard</h3>
+            </div>
+            <div id="scores"></div>
+        </div>
+
+        <button class="again" id="playAgain">Play Again</button>
+        <div class="small-note">Scores are saved locally in this browser.</div>
+    </div>
+</div>
+
+<script>
+(() => {
+    "use strict";
+
+    const CONFIG = {
+        strawCount: 1500,
+        momentumRetention: 0.1, // 1% of release velocity
+        friction: 0.92,
+        timerPrecision: 2,
+        leaderboardSize: 10,
+        strawMinLength: 180,
+        strawMaxLength: 390,
+        strawHeight: 42,
+        needleWidth: 100,
+        needleHeight: 10
+    };
+
+    const game = document.getElementById("game");
+    const timerElement = document.getElementById("timer");
+    const restartButton = document.getElementById("restart");
+    const overlay = document.getElementById("overlay");
+    const result = document.getElementById("result");
+    const nameInput = document.getElementById("nameInput");
+    const saveScoreButton = document.getElementById("saveScore");
+    const playAgainButton = document.getElementById("playAgain");
+    const scoresElement = document.getElementById("scores");
+
+    let straws = [];
+    let needle = null;
+    let running = false;
+    let finished = false;
+    let startTime = 0;
+    let elapsed = 0;
+    let animationFrame = null;
+    let zCounter = 100;
+    let activeDrag = null;
+
+    const random = (min, max) => Math.random() * (max - min) + min;
+    const randomInt = (min, max) => Math.floor(random(min, max + 1));
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    function formatTime(seconds) {
+        return `${seconds.toFixed(CONFIG.timerPrecision)} s`;
+    }
+
+    function viewport() {
+        return {
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    /*
+     * Each straw is its own SVG path.
+     *
+     * The path is deliberately generated with several segments instead of
+     * using a straight rectangle. Every straw gets a different sequence of
+     * bends, offsets and small direction changes.
+     */
+    function makeStrawPath(width) {
+        const segments = randomInt(4, 7);
+        const points = [];
+        const step = width / (segments - 1);
+
+        let y = random(13, 29);
+        let direction = Math.random() < .5 ? -1 : 1;
+
+        points.push([0, y]);
+
+        for (let i = 1; i < segments; i++) {
+            const x = i * step;
+
+            // Change direction occasionally, but never produce a perfectly
+            // straight repeated template.
+            if (Math.random() < .55) direction *= -1;
+
+            const magnitude = random(3, 12);
+            y = clamp(
+                y + direction * magnitude + random(-3, 3),
+                6,
+                36
+            );
+
+            points.push([x, y]);
+        }
+
+        // Slightly roughen the line using quadratic control points.
+        let d = `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+
+        for (let i = 1; i < points.length; i++) {
+            const prev = points[i - 1];
+            const curr = points[i];
+
+            const midX = (prev[0] + curr[0]) / 2;
+            const midY = (prev[1] + curr[1]) / 2 + random(-3, 3);
+
+            d += ` Q ${midX.toFixed(1)} ${midY.toFixed(1)}, ${curr[0].toFixed(1)} ${curr[1].toFixed(1)}`;
+        }
+
+        return d;
+    }
+
+    function createStraw(index) {
+        const { width: vw, height: vh } = viewport();
+
+        const strawWidth = random(CONFIG.strawMinLength, CONFIG.strawMaxLength);
+        const strawHeight = CONFIG.strawHeight;
+
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.classList.add("straw");
+        svg.setAttribute("width", strawWidth);
+        svg.setAttribute("height", strawHeight);
+        svg.setAttribute("viewBox", `0 0 ${strawWidth} ${strawHeight}`);
+        svg.dataset.index = index;
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", makeStrawPath(strawWidth));
+
+        // A barely visible inner stroke makes the irregular line feel more
+        // like straw without turning it into a cartoon asset.
+        const secondary = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        secondary.classList.add("secondary");
+        secondary.setAttribute("d", path.getAttribute("d"));
+
+        svg.appendChild(secondary);
+        svg.appendChild(path);
+
+        const angle = random(0, 360);
+        const x = random(0, Math.max(1, vw - strawWidth));
+        const y = random(0, Math.max(1, vh - strawHeight));
+
+        const state = {
+            el: svg,
+            x,
+            y,
+            width: strawWidth,
+            height: strawHeight,
+            angle,
+            vx: 0,
+            vy: 0,
+            lastPointerX: 0,
+            lastPointerY: 0,
+            lastMoveTime: 0
+        };
+
+        svg.style.left = `${x}px`;
+        svg.style.top = `${y}px`;
+        svg.style.transform = `rotate(${angle}deg)`;
+        svg.style.zIndex = ++zCounter;
+
+        straws.push(state);
+        game.appendChild(svg);
+
+        svg.addEventListener("pointerdown", event => beginDrag(event, state));
+    }
+
+    function createNeedle() {
+        const { width: vw, height: vh } = viewport();
+
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.id = "needle";
+        svg.setAttribute("width", CONFIG.needleWidth);
+        svg.setAttribute("height", CONFIG.needleHeight);
+        svg.setAttribute("viewBox", `0 0 ${CONFIG.needleWidth} ${CONFIG.needleHeight}`);
+        svg.setAttribute("aria-label", "needle");
+
+        /*
+         * Inspired by the user's reference: a pale, tapered needle body and
+         * a dark oval eye at the blunt end. It is recreated as inline SVG,
+         * so the GitHub Pages game has no external asset dependency.
+         */
+        const body = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        body.classList.add("body");
+        body.setAttribute(
+            "d",
+            `M 18 7
+             L ${CONFIG.needleWidth - 5} 10
+             L ${CONFIG.needleWidth - 5} 11
+             L 18 17
+             Q 9 12 18 7 Z`
+        );
+
+        const eye = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+        eye.classList.add("eye");
+        eye.setAttribute("cx", "22");
+        eye.setAttribute("cy", "12");
+        eye.setAttribute("rx", "6");
+        eye.setAttribute("ry", "3.5");
+
+        const shine = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+        shine.classList.add("shine");
+        shine.setAttribute("cx", "14.5");
+        shine.setAttribute("cy", "10.3");
+        shine.setAttribute("rx", "3.5");
+        shine.setAttribute("ry", "1.1");
+
+        svg.appendChild(body);
+        svg.appendChild(eye);
+        svg.appendChild(shine);
+
+        const x = random(40, Math.max(41, vw - CONFIG.needleWidth - 40));
+        const y = random(50, Math.max(51, vh - CONFIG.needleHeight - 50));
+        const angle = random(0, 360);
+
+        svg.style.left = `${x}px`;
+        svg.style.top = `${y}px`;
+        svg.style.transform = `rotate(${angle}deg)`;
+        svg.style.zIndex = 20;
+
+        needle = svg;
+        game.appendChild(svg);
+
+        svg.addEventListener("pointerdown", onNeedleFound);
+    }
+
+    function beginDrag(event, state) {
+        if (!running || finished) return;
+
+        event.preventDefault();
+
+        zCounter++;
+        state.el.style.zIndex = zCounter;
+        state.el.classList.add("dragging");
+
+        const rect = game.getBoundingClientRect();
+
+        activeDrag = {
+            state,
+            pointerId: event.pointerId,
+            offsetX: event.clientX - rect.left - state.x,
+            offsetY: event.clientY - rect.top - state.y
+        };
+
+        state.lastPointerX = event.clientX;
+        state.lastPointerY = event.clientY;
+        state.lastMoveTime = performance.now();
+        state.vx = 0;
+        state.vy = 0;
+
+        state.el.setPointerCapture?.(event.pointerId);
+    }
+
+    function moveDrag(event) {
+        if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+
+        const state = activeDrag.state;
+        const now = performance.now();
+        const dt = Math.max(1, now - state.lastMoveTime);
+
+        const rawVx = (event.clientX - state.lastPointerX) / dt;
+        const rawVy = (event.clientY - state.lastPointerY) / dt;
+
+        // Keep only 1% of the velocity from the player's last movement.
+        state.vx = rawVx * 1000 * CONFIG.momentumRetention;
+        state.vy = rawVy * 1000 * CONFIG.momentumRetention;
+
+        const desiredX = event.clientX - activeDrag.offsetX;
+        const desiredY = event.clientY - activeDrag.offsetY;
+
+        const bounds = getBounds(state);
+
+        state.x = clamp(desiredX, bounds.minX, bounds.maxX);
+        state.y = clamp(desiredY, bounds.minY, bounds.maxY);
+
+        renderStraw(state);
+
+        state.lastPointerX = event.clientX;
+        state.lastPointerY = event.clientY;
+        state.lastMoveTime = now;
+    }
+
+    function endDrag(event) {
+        if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+
+        activeDrag.state.el.classList.remove("dragging");
+        activeDrag = null;
+    }
+
+    /*
+     * Boundary calculation uses the rotated rectangle's axis-aligned
+     * bounding box. This keeps the complete irregular straw on-screen even
+     * when it is rotated diagonally.
+     */
+    function getBounds(state) {
+        const radians = state.angle * Math.PI / 180;
+        const cos = Math.abs(Math.cos(radians));
+        const sin = Math.abs(Math.sin(radians));
+
+        const bboxWidth = state.width * cos + state.height * sin;
+        const bboxHeight = state.width * sin + state.height * cos;
+
+        return {
+            minX: bboxWidth / 2 - state.width / 2,
+            maxX: window.innerWidth - bboxWidth / 2 - state.width / 2,
+            minY: bboxHeight / 2 - state.height / 2,
+            maxY: window.innerHeight - bboxHeight / 2 - state.height / 2
+        };
+    }
+
+    function renderStraw(state) {
+        state.el.style.left = `${state.x}px`;
+        state.el.style.top = `${state.y}px`;
+    }
+
+    function updatePhysics(dt) {
+        for (const state of straws) {
+            if (activeDrag && activeDrag.state === state) continue;
+
+            if (Math.abs(state.vx) < 0.01 && Math.abs(state.vy) < 0.01) {
+                state.vx = 0;
+                state.vy = 0;
+                continue;
+            }
+
+            state.x += state.vx * dt;
+            state.y += state.vy * dt;
+
+            const bounds = getBounds(state);
+
+            if (state.x <= bounds.minX || state.x >= bounds.maxX) {
+                state.x = clamp(state.x, bounds.minX, bounds.maxX);
+                state.vx *= -0.55;
+            }
+
+            if (state.y <= bounds.minY || state.y >= bounds.maxY) {
+                state.y = clamp(state.y, bounds.minY, bounds.maxY);
+                state.vy *= -0.55;
+            }
+
+            const decay = Math.pow(CONFIG.friction, dt * 60);
+            state.vx *= decay;
+            state.vy *= decay;
+
+            renderStraw(state);
+        }
+    }
+
+    function gameLoop(now) {
+        if (!running) return;
+
+        elapsed = (now - startTime) / 1000;
+        timerElement.textContent = formatTime(elapsed);
+
+        updatePhysics(1 / 60);
+
+        animationFrame = requestAnimationFrame(gameLoop);
+    }
+
+    function onNeedleFound(event) {
+        if (!running || finished) return;
+
+        event.preventDefault();
+
+        finished = true;
+        running = false;
+
+        if (animationFrame) {
+            cancelAnimationFrame(animationFrame);
+            animationFrame = null;
+        }
+
+        elapsed = (performance.now() - startTime) / 1000;
+        timerElement.textContent = formatTime(elapsed);
+
+        needle.classList.add("found");
+
+        result.textContent = `You found the needle in ${formatTime(elapsed)}.`;
+        overlay.classList.add("show");
+
+        nameInput.value = "";
+        saveScoreButton.disabled = false;
+        saveScoreButton.textContent = "Save Score";
+
+        renderLeaderboard();
+        setTimeout(() => nameInput.focus(), 60);
+    }
+
+    function getScores() {
+        try {
+            return JSON.parse(localStorage.getItem("needleHaystackScores") || "[]");
+        } catch {
+            return [];
+        }
+    }
+
+    function saveScore() {
+        const name = nameInput.value.trim() || "Anonymous";
+        const scores = getScores();
+
+        scores.push({
+            name: name.substring(0, 18),
+            time: Number(elapsed.toFixed(2)),
+            date: Date.now()
+        });
+
+        scores.sort((a, b) => a.time - b.time);
+        scores.splice(CONFIG.leaderboardSize);
+
+        localStorage.setItem("needleHaystackScores", JSON.stringify(scores));
+
+        renderLeaderboard();
+
+        saveScoreButton.disabled = true;
+        saveScoreButton.textContent = "Score Saved";
+    }
+
+    function renderLeaderboard() {
+        const scores = getScores();
+
+        if (!scores.length) {
+            scoresElement.innerHTML = `<div class="empty">No scores yet.</div>`;
+            return;
+        }
+
+        scoresElement.innerHTML = scores.map((score, index) => `
+            <div class="score">
+                <span>${index + 1}.</span>
+                <span>${escapeHtml(score.name)}</span>
+                <span class="score-time">${Number(score.time).toFixed(2)} s</span>
+            </div>
+        `).join("");
+    }
+
+    function startGame() {
+        if (animationFrame) {
+            cancelAnimationFrame(animationFrame);
+        }
+
+        game.innerHTML = "";
+        straws = [];
+        needle = null;
+        activeDrag = null;
+        zCounter = 100;
+        running = true;
+        finished = false;
+        elapsed = 0;
+
+        timerElement.textContent = "0.00 s";
+        overlay.classList.remove("show");
+
+        // Put the needle down first, then cover it with hay.
+        createNeedle();
+
+        for (let i = 0; i < CONFIG.strawCount; i++) {
+            createStraw(i);
+        }
+
+        startTime = performance.now();
+        animationFrame = requestAnimationFrame(gameLoop);
+    }
+
+    game.addEventListener("pointermove", moveDrag);
+    game.addEventListener("pointerup", endDrag);
+    game.addEventListener("pointercancel", endDrag);
+
+    restartButton.addEventListener("click", startGame);
+    playAgainButton.addEventListener("click", startGame);
+    saveScoreButton.addEventListener("click", saveScore);
+
+    nameInput.addEventListener("keydown", event => {
+        if (event.key === "Enter") saveScore();
+    });
+
+    window.addEventListener("resize", () => {
+        if (!running) return;
+
+        for (const state of straws) {
+            const bounds = getBounds(state);
+            state.x = clamp(state.x, bounds.minX, bounds.maxX);
+            state.y = clamp(state.y, bounds.minY, bounds.maxY);
+            renderStraw(state);
+        }
+    });
+
+    renderLeaderboard();
+    startGame();
+})();
+</script>
+
+</body>
+</html>
